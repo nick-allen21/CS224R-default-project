@@ -70,6 +70,53 @@ def save_checkpoint(model, tokenizer, optimizer, scheduler, output_dir):
     }, os.path.join(output_dir, 'train_states.pth'))
     print(f"Model saved to {output_dir}")
 
+def sequence_logps(model, input_ids, attention_mask, response_mask, average_logps):
+    """Sum of per-token log-probs over response tokens, returns [batch]."""
+    logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
+    pred_logits = logits[:, :-1, :].contiguous()
+    labels = input_ids[:, 1:].contiguous()
+
+    token_logp = -F.cross_entropy(
+        pred_logits.view(-1, pred_logits.size(-1)),
+        labels.view(-1),
+        reduction="none",
+    ).view(input_ids.size(0), -1)
+
+    masked = token_logp * response_mask
+    if average_logps:
+        return masked.sum(dim=-1) / response_mask.sum(dim=-1).clamp(min=1.0)
+    return masked.sum(dim=-1)
+
+def batch_logps(model, batch, device, average_logps):
+    """Compute chosen orrejected sequence log-probs for one batch under a model."""
+    input_ids_w = batch["input_ids_w"].to(device)
+    attention_mask_w = batch["attention_mask_w"].to(device)
+    response_mask_w = batch["is_response_token_w"][:, 1:].to(device).float()
+    input_ids_l = batch["input_ids_l"].to(device)
+    attention_mask_l = batch["attention_mask_l"].to(device)
+    response_mask_l = batch["is_response_token_l"][:, 1:].to(device).float()
+
+    chosen_logps = sequence_logps(model, input_ids_w, attention_mask_w, response_mask_w, average_logps)
+    rejected_logps = sequence_logps(model, input_ids_l, attention_mask_l, response_mask_l, average_logps)
+    return chosen_logps, rejected_logps
+
+def preference_loss(policy_chosen, policy_rejected, ref_chosen, ref_rejected, beta, loss_type):
+    """IPO or DPO loss plus reward margin and accuracy, all from four sequence log-probs."""
+    chosen_logratio = policy_chosen - ref_chosen
+    rejected_logratio = policy_rejected - ref_rejected
+    h = chosen_logratio - rejected_logratio
+
+    if loss_type == 'ipo':
+        loss = ((h - 1.0 / (2.0 * beta)) ** 2).mean()
+    elif loss_type == 'dpo':
+        loss = -F.logsigmoid(beta * h).mean()
+    else:
+        raise ValueError(f"unknown loss_type: {loss_type}")
+
+    reward_margin = (beta * h).mean()
+    reward_acc = (chosen_logratio > rejected_logratio).float().mean()
+    return loss, reward_margin, reward_acc
+
 def train(
     model, 
     tokenizer, 
@@ -88,13 +135,95 @@ def train(
     average_logps=False,
     loss_type='ipo',
 ):
-    # TODO(student): implement IPO/DPO-style pairwise optimization.
-    # Expected high-level flow:
-    # 1) Compute policy log-probs for chosen/rejected responses.
-    # 2) Compute frozen-reference log-probs for chosen/rejected responses.
-    # 3) Build the pairwise objective (IPO or related variant).
-    # 4) Apply gradient accumulation, clipping, logging, and checkpointing.
-    raise NotImplementedError("This function is not implemented")
+    model.train()
+    global_step = 0
+    optimizer.zero_grad()
+
+    for epoch in range(num_epochs):
+        print(f"\nEpoch {epoch}")
+        train_loss_sum = 0.0
+        train_margin_sum = 0.0
+        train_acc_sum = 0.0
+        num_updates = 0
+
+        for i, batch in enumerate(train_dataloader):
+            policy_chosen, policy_rejected = batch_logps(model, batch, device, average_logps)
+            with torch.no_grad():
+                ref_chosen, ref_rejected = batch_logps(reference_model, batch, device, average_logps)
+
+            loss, reward_margin, reward_acc = preference_loss(
+                policy_chosen, policy_rejected, ref_chosen, ref_rejected, beta, loss_type
+            )
+
+            (loss / gradient_accumulation_steps).backward()
+
+            should_step = (i + 1) % gradient_accumulation_steps == 0
+            is_last_batch = (i + 1) == len(train_dataloader)
+
+            if should_step or is_last_batch:
+                if gradient_clipping and gradient_clipping > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
+
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+
+                global_step += 1
+                num_updates += 1
+                train_loss_sum += loss.item()
+                train_margin_sum += reward_margin.item()
+                train_acc_sum += reward_acc.item()
+
+                wandb.log({
+                    "train/loss": loss.item(),
+                    "train/reward_margin": reward_margin.item(),
+                    "train/reward_accuracy": reward_acc.item(),
+                    "train/learning_rate": scheduler.get_last_lr()[0],
+                    "global_step": global_step,
+                    "epoch": epoch,
+                })
+
+        if num_updates:
+            print(
+                f"train loss: {train_loss_sum / num_updates:.4f} | "
+                f"train reward margin: {train_margin_sum / num_updates:.4f} | "
+                f"train reward acc: {train_acc_sum / num_updates:.4f}"
+            )
+
+        model.eval()
+        eval_losses = []
+        eval_margins = []
+        eval_accs = []
+
+        with torch.no_grad():
+            for batch in test_dataloader:
+                policy_chosen, policy_rejected = batch_logps(model, batch, device, average_logps)
+                ref_chosen, ref_rejected = batch_logps(reference_model, batch, device, average_logps)
+                loss, reward_margin, reward_acc = preference_loss(
+                    policy_chosen, policy_rejected, ref_chosen, ref_rejected, beta, loss_type
+                )
+                eval_losses.append(loss.item())
+                eval_margins.append(reward_margin.item())
+                eval_accs.append(reward_acc.item())
+
+        avg_eval_loss = sum(eval_losses) / len(eval_losses) if eval_losses else 0.0
+        avg_eval_margin = sum(eval_margins) / len(eval_margins) if eval_margins else 0.0
+        avg_eval_acc = sum(eval_accs) / len(eval_accs) if eval_accs else 0.0
+
+        print(f"eval loss: {avg_eval_loss:.4f} | eval reward margin: {avg_eval_margin:.4f} | eval reward acc: {avg_eval_acc:.4f}")
+        wandb.log({
+            "test/loss": avg_eval_loss,
+            "test/reward_margin": avg_eval_margin,
+            "test/reward_accuracy": avg_eval_acc,
+            "epoch": epoch
+        })
+
+        if save_model:
+            ckpt_dir = os.path.join(output_dir, f"epoch_{epoch}")
+            save_checkpoint(model, tokenizer, optimizer, scheduler, ckpt_dir)
+
+        model.train()
+        clear_cache(model)
 
 def main():
     parser = argparse.ArgumentParser()

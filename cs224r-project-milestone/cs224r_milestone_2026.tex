@@ -1,0 +1,215 @@
+% =============================================================================
+% CS224R IPO + RLOO Milestone Report Template
+% =============================================================================
+% This template provides a suggested structure for your CS224R milestone report.
+% Please ensure your report addresses all requirements for the IPO and RLOO components.
+% =============================================================================
+
+\documentclass{article}
+
+\usepackage[preprint]{cs224r_2026}
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{amsmath}
+\usepackage{fancyhdr}       % for headers and footers
+\usepackage{graphicx}       % for including figures
+\usepackage{enumitem}       % for custom enumeration
+\usepackage{listings}       % for formatting rollouts/code blocks
+
+% Setup header
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyhead[C]{CS224R IPO + RLOO Milestone Report}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Custom listing style for rollouts
+\lstset{
+  basicstyle=\small\ttfamily,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+  columns=fullflexible,
+  keepspaces=true,
+  captionpos=b
+}
+
+% Custom title format for milestone document
+\renewcommand{\maketitle}{
+  \begin{center}
+    {\bf \large CS224R Milestone: IPO + RLOO Alignment Report}\\
+    \vspace{0.15cm}
+    {\bf Project Title: Your Project Title Here}\\
+    \vspace{0.1cm}
+    {\bf Team Members:} Member 1, Member 2, Member 3\\
+    \vspace{0.1cm}
+    {\bf Emails:} email1@stanford.edu, email2@stanford.edu, email3@stanford.edu\\
+    \vspace{0.2cm}
+  \end{center}
+}
+
+\begin{document}
+
+\maketitle
+
+% Submission checklist and instructions (Please remove before submitting)
+\begin{center}
+\fcolorbox{purple}{purple!5}{
+  \begin{minipage}{0.95\textwidth}
+    \textcolor{purple}{\textbf{Submission Checklist \& Instructions (Please remove this block before submitting):}}
+    \begin{enumerate}[leftmargin=*, noitemsep]
+      \item \textbf{IPO Milestone Assignment (Gradescope):} Submit \texttt{ipo\_trainer/ipo.py} (implementation) and \texttt{eval.json} (evaluation output).
+      \item \textbf{RLOO Milestone Assignment (Gradescope):} Submit \texttt{rloo\_trainer/rloo\_update\_worker.py} (implementation) and \texttt{eval.json} (evaluation output).
+      \item \textbf{IPO/RLOO Milestone Submission PDF (Gradescope):} Submit this compiled PDF report containing all required plots and rollout samples detailed below.
+      \item \textbf{Plots Requirement:} All reported training and evaluation metrics must be displayed as plots (e.g., generated with \texttt{matplotlib}) rather than only scalar values.
+    \end{enumerate}
+  \end{minipage}
+}
+\end{center}
+
+\vspace{0.3cm}
+
+\section{IPO Milestone Component}
+\label{sec:ipo_milestone}
+
+\subsection{Training and Evaluation Metrics}
+Describe your IPO implementation, training setup (e.g., hyperparameter choices such as learning rate, $\beta$, epochs, optimizer), and any specific observations during the alignment process.
+
+% Side-by-side plots for IPO Loss and Reward Margin
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    % Replace with your actual matplotlib plot (e.g., ipo_loss.png)
+    \fbox{\rule{0pt}{4cm}\rule{6cm}{0pt}}
+    \caption{IPO Loss on Train and Test sets over training iterations.}
+    \label{fig:ipo_loss}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    % Replace with your actual matplotlib plot (e.g., ipo_margin.png)
+    \fbox{\rule{0pt}{4cm}\rule{6cm}{0pt}}
+    \caption{IPO Reward Margin on Train and Test sets over training iterations.}
+    \label{fig:ipo_margin}
+  \end{minipage}
+\end{figure}
+
+\subsubsection{Functional Correctness (Pass@$k$)}
+Report the pass@$k$ metrics (e.g., as a bar plot generated with matplotlib comparing SFT and IPO on the Test Set).
+
+\begin{figure}[htbp]
+  \centering
+  % Replace with your actual matplotlib plot (e.g., ipo_pass_k.png)
+  \fbox{\rule{0pt}{4cm}\rule{8cm}{0pt}}
+  \caption{Pass@$k$ comparison between SFT Baseline and IPO Aligned Model on the Test Set.}
+  \label{fig:ipo_pass_k}
+\end{figure}
+
+\subsection{Sample Rollout}
+Include one test-set rollout for a sample test problem using the IPO-aligned model.
+
+\begin{lstlisting}[caption={Sample IPO Test-Set Rollout (Countdown)}, label={lst:ipo_rollout}]
+[PROMPT]
+Target: 24
+Allowed numbers: [3, 4, 6, 8]
+
+[IPO MODEL ROLLOUT]
+<think>
+[model thinking here]
+</think>
+<answer>[model answer here]</answer>
+\end{lstlisting}
+
+\newpage
+
+\section{RLOO Milestone Component}
+\label{sec:rloo_milestone}
+
+\subsection{Training and Evaluation Metrics}
+Describe your RLOO implementation (such as the REINFORCE Leave-One-Out baseline configuration), RL training setup (e.g., learning rate, KL coefficient, number of rollouts per prompt), and stability observations.
+
+% 2x2 grid of plots for RLOO training metrics
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    % Replace with your actual plot (e.g., rloo_loss.png)
+    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
+    \caption{RLOO Loss on Train set over training iterations.}
+    \label{fig:rloo_loss}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    % Replace with your actual plot (e.g., importance_weight.png)
+    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
+    \caption{Importance Weight Mean on Train set.}
+    \label{fig:rloo_importance}
+  \end{minipage}
+  
+  \vspace{0.4cm}
+  
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    % Replace with your actual plot (e.g., kl_loss.png)
+    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
+    \caption{KL Loss on Train set over training iterations.}
+    \label{fig:rloo_kl}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    % Replace with your actual plot (e.g., rollout_accuracy.png)
+    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
+    \caption{Rollout Accuracy (over 16 samples) on Train set.}
+    \label{fig:rloo_accuracy}
+  \end{minipage}
+\end{figure}
+
+\subsubsection{Functional Correctness (Pass@$k$)}
+Report the pass@$k$ metrics (e.g., as a bar plot generated with matplotlib comparing SFT and RLOO on the Test Set).
+
+\begin{figure}[htbp]
+  \centering
+  % Replace with your actual matplotlib plot (e.g., rloo_pass_k.png)
+  \fbox{\rule{0pt}{4cm}\rule{8cm}{0pt}}
+  \caption{Pass@$k$ comparison between SFT Baseline and RLOO Aligned Model on the Test Set.}
+  \label{fig:rloo_pass_k}
+\end{figure}
+
+\subsection{Sample Rollout}
+Include one test-set rollout for a sample test problem using the RLOO-aligned model.
+
+\begin{lstlisting}[caption={Sample RLOO Test-Set Rollout (Countdown)}, label={lst:rloo_rollout}]
+[PROMPT]
+Target: 24
+Allowed numbers: [3, 4, 6, 8]
+
+[RLOO MODEL ROLLOUT]
+<think>
+[model thinking here]
+</think>
+<answer>[model answer here]</answer>
+\end{lstlisting}
+
+\newpage
+
+\section{Extension Updates (Optional)}
+\label{sec:extension_updates}
+Describe any progress, modifications, or updates regarding your project extension here. (You may remove or leave this section blank if you do not have updates to report at this stage).
+
+\newpage
+
+% References
+\bibliographystyle{plainnat}
+\bibliography{reference}
+
+\end{document}

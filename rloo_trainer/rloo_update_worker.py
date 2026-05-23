@@ -206,14 +206,77 @@ class RLOOUpdateWorker:
         is_update_step: bool = True,
         device='cuda',
     ):
-        # TODO(student): implement one RLOO policy update.
-        # Inputs arrive flattened as [batch_size * group_size, seq_len].
-        # Required pieces:
-        # 1) Compute per-token log-probs on target tokens under current policy.
-        # 2) Build leave-one-out baseline within each response group.
-        # 3) Compute policy-gradient loss using advantages (and importance weights
-        #    if sample_log_probs are provided).
-        # 4) Add entropy regularization and optional KL penalty to ref model.
-        # 5) Backward pass; if `is_update_step`, clip and step optimizer/scheduler.
-        # 6) Return scalar metrics used by trainer logging.
-        raise NotImplementedError("This function is not implemented")
+        input_ids = torch.as_tensor(input_ids, dtype=torch.long, device=device)
+        attention_mask = torch.as_tensor(attention_mask, dtype=torch.long, device=device)
+        response_mask = (torch.as_tensor(is_response_token, device=device)[:, 1:] * attention_mask[:, 1:]).float()        
+        rewards = torch.as_tensor(rewards, dtype=torch.float32, device=device)
+
+        logits = self.model(input_ids=input_ids, attention_mask=attention_mask).logits
+        pred_logits = logits[:, :-1, :]
+        labels = input_ids[:, 1:]
+
+        # log-prob of the actual token, computed without materializing a full
+        # float32 vocab distribution (logsumexp keeps it to per-position scalars).
+        gathered = pred_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+        logZ = torch.logsumexp(pred_logits, dim=-1)
+        token_logp = gathered - logZ
+
+        # Entropy via H = logZ - E[logit]; probs only needed transiently.
+        probs = torch.softmax(pred_logits, dim=-1)
+        token_entropy = logZ - (probs * pred_logits).sum(dim=-1)
+
+        denom = response_mask.sum().clamp(min=1.0)
+        seq_logp = (token_logp * response_mask).sum(dim=-1)
+
+        # Leave-one-out baseline within each group of group_size responses.
+        n = rewards.shape[0]
+        num_groups = n // self.group_size
+        grouped = rewards.view(num_groups, self.group_size)
+        group_sum = grouped.sum(dim=1, keepdim=True)
+        loo_baseline = (group_sum - grouped) / (self.group_size - 1)
+        advantages = (grouped - loo_baseline).view(-1)
+
+        # Sequence-level importance weight (vLLM sampler vs HF trainer mismatch).
+        if sample_log_probs is not None:
+            sample_log_probs = torch.as_tensor(sample_log_probs, dtype=torch.float32, device=device)
+            importance_weight = torch.exp(seq_logp.detach() - sample_log_probs)
+        else:
+            importance_weight = torch.ones_like(seq_logp)
+
+        pg_per_seq = -advantages * importance_weight * seq_logp
+        pg_loss = pg_per_seq.mean()
+
+        entropy = (token_entropy * response_mask).sum() / denom
+        loss = pg_loss - self.entropy_coefficient * entropy
+
+        kl_value = 0.0
+        if self.kl_divergence_coefficient > 0 and hasattr(self, 'ref_model'):
+            with torch.no_grad():
+                ref_logits = self.ref_model(input_ids=input_ids, attention_mask=attention_mask).logits[:, :-1, :]
+                ref_token_logp = ref_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1) - torch.logsumexp(ref_logits, dim=-1)
+            kl_per_token = token_logp - ref_token_logp
+            kl_loss = (kl_per_token * response_mask).sum() / denom
+            loss = loss + self.kl_divergence_coefficient * kl_loss
+            kl_value = kl_loss.item()
+
+        (loss / self.gradient_accumulation_steps).backward()
+
+        if is_update_step:
+            if self.gradient_clipping and self.gradient_clipping > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clipping)
+            self.optimizer.step()
+            self.scheduler.step()
+            self.optimizer.zero_grad()
+
+        return {
+            "loss": loss.item(),
+            "pg_loss": pg_loss.item(),
+            "entropy": entropy.item(),
+            "kl_loss": kl_value,
+            "reward_mean": rewards.mean().item(),
+            "advantage_mean": advantages.mean().item(),
+            "advantage_abs_mean": advantages.abs().mean().item(),
+            "importance_weight_mean": importance_weight.mean().item(),
+            "rollout_accuracy": (rewards >= 1.0).float().mean().item(),
+            "lr": self.scheduler.get_last_lr()[0],
+        }

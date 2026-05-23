@@ -1,0 +1,48 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Logs / wandb
+wandb/
+*.log
+
+# LaTeX build artifacts
+cs224r-project-milestone/*.aux
+cs224r-project-milestone/*.log
+cs224r-project-milestone/*.out
+cs224r-project-milestone/*.toc
+cs224r-project-milestone/*.bbl
+cs224r-project-milestone/*.blg
+cs224r-project-milestone/*.synctex.gz
+cs224r-project-milestone/*.fdb_latexmk
+cs224r-project-milestone/*.fls
