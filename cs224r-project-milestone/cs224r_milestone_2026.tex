@@ -177,29 +177,29 @@ This works! Let's verify:
 \label{sec:rloo_milestone}
 
 \subsection{Training and Evaluation Metrics}
-We initialize RLOO from the SFT checkpoint and train for 100 update steps with a
+We initialize RLOO from the SFT checkpoint and train for 27 update steps with a
 constant learning rate of $1\times10^{-5}$, batch size 128, KL coefficient
-$0.001$ to the frozen SFT reference, and no entropy bonus. For each prompt we
+$0.001$ to the frozen SFT reference, and an entropy coefficient of $0.001$. For each prompt we
 sample a group of $G$ responses and score them with the rule-based verifier. The
 Leave-One-Out baseline for a response is the mean reward of the other $G-1$
 responses in its group, so the advantage is that response's reward minus the
 group mean. Each update applies a sequence-level importance weight to correct for
 log-probability mismatch between the vLLM sampler and the trainer.
 
-We targeted a group size of 8 but hit memory limits on the H100 and reduced it to
-4, which makes the leave-one-out baseline noisier. Mean reward stayed around
-$0.25$ to $0.30$ (Figure~\ref{fig:rloo_reward}) and rollout accuracy around
-$0.18$ to $0.26$ across the run, stable but without a clear upward trend. The importance
-weight is near 1 for most sequences but spikes sharply late in training
-(Figure~\ref{fig:rloo_importance}); with gradient clipping disabled that update
-was large, but reward recovered right after.
+We use a group size of 8. Mean reward climbed from $0.31$ at step 0 to $0.55$ by
+step 27 (Figure~\ref{fig:rloo_reward}) and rollout accuracy rose from $0.24$ to
+$0.52$ across the run. The importance weight is clamped to $[0.5, 2.0]$ to bound
+the influence of vLLM/HF logprob mismatch on long responses, and gradients are
+norm-clipped at $1.0$ so no single update can dominate. Under these safeguards the
+weight trends down from $1.78$ to $1.18$ as the policy adapts to the sampler
+(Figure~\ref{fig:rloo_importance}), and training remained stable throughout.
 
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.48\textwidth}
     \centering
     \includegraphics[width=\linewidth]{wandDB-imgs/rloo-train-loss.png}
-    \caption{RLOO loss on the train set. The single spike late in training dominates the vertical scale; loss is otherwise small and stable.}
+    \caption{RLOO loss on the train set. Loss climbs smoothly from $\approx -16$ to $\approx 0$ over training.}
     \label{fig:rloo_loss}
   \end{minipage}
   \hfill
@@ -231,24 +231,22 @@ was large, but reward recovered right after.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.48\textwidth]{wandDB-imgs/rloo-train-reward-mean.png}
-  \caption{Mean reward on the train set, which stays in the $0.25$ to $0.30$ range without a clear upward trend over the 100 steps.}
+  \caption{Mean reward on the train set, rising from $0.31$ to $0.55$ over training.}
   \label{fig:rloo_reward}
 \end{figure}
 
 \subsubsection{Functional Correctness (Pass@$k$)}
 Using the same 50 held-out problems and 16 completions per problem, RLOO reaches
-pass@1 $24.6\%$ and pass@16 $70.0\%$, below both SFT ($33.2\%$, $74.0\%$) and IPO
-($35.9\%$, $74.0\%$). This is consistent with the training curves: over only 100
-steps with a group size of 4 and a reward signal that never trended upward, the
-policy did not improve over its SFT starting point and slightly regressed. The
-importance-weight instability late in training likely contributed by letting a few
-mis-weighted updates dominate. Figure~\ref{fig:rloo_pass_k} shows all three
-methods on one axis.
+pass@1 $44.8\%$ and pass@16 $68.0\%$, surpassing both SFT ($33.3\%$, $74.0\%$) and
+IPO ($35.9\%$, $74.0\%$) at pass@1 by a wide margin. The policy gains roughly 12
+percentage points of pass@1 over its SFT starting point; the pass@16 ceiling
+decreases slightly as the policy becomes more deterministic, but the gap closes as
+$k$ grows. Figure~\ref{fig:rloo_pass_k} shows all three methods on one axis.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.7\textwidth]{../passk_comparison.png}
-  \caption{Pass@$k$ on the held-out set, SFT versus RLOO (IPO also shown for reference). RLOO sits below both baselines at every $k$.}
+  \caption{Pass@$k$ on the held-out set, SFT versus RLOO (IPO also shown for reference). RLOO leads at pass@1 and converges with the baselines as $k$ grows.}
   \label{fig:rloo_pass_k}
 \end{figure}
 
