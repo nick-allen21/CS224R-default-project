@@ -241,12 +241,12 @@ pass@1 $44.8\%$ and pass@16 $68.0\%$, surpassing both SFT ($33.3\%$, $74.0\%$) a
 IPO ($35.9\%$, $74.0\%$) at pass@1 by a wide margin. The policy gains roughly 12
 percentage points of pass@1 over its SFT starting point; the pass@16 ceiling
 decreases slightly as the policy becomes more deterministic, but the gap closes as
-$k$ grows. Figure~\ref{fig:rloo_pass_k} shows all three methods on one axis.
+$k$ grows. Note: Figure~\ref{fig:rloo_pass_k} below still shows the original RLOO run; we did not have time to regenerate the comparison plot for the fixed checkpoint before the resubmission deadline, but the updated pass@$k$ numbers are reported above.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.7\textwidth]{../passk_comparison.png}
-  \caption{Pass@$k$ on the held-out set, SFT versus RLOO (IPO also shown for reference). RLOO leads at pass@1 and converges with the baselines as $k$ grows.}
+  \caption{Pass@$k$ on the held-out set from the original RLOO run (before the importance-weight clamp and gradient-norm-clip fixes). Updated pass@$k$ values for the fixed checkpoint are reported in the text.}
   \label{fig:rloo_pass_k}
 \end{figure}
 
