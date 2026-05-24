@@ -19,7 +19,9 @@
 \usepackage{xcolor}         % colors
 \usepackage{amsmath}
 \usepackage{fancyhdr}       % for headers and footers
-\usepackage{graphicx}       % for including figures
+\usepackage{graphicx}   
+\usepackage{float}
+% for including figures
 \usepackage{enumitem}       % for custom enumeration
 \usepackage{listings}       % for formatting rollouts/code blocks
 
@@ -48,9 +50,9 @@
     \vspace{0.15cm}
     {\bf Project Title: Conjecturer-Prover Self-Play for Countdown Arithmetic Reasoning}\\
     \vspace{0.1cm}
-    {\bf Team Members:} Nick Allen, Finn Staeblein 2, Member 3\\
+    {\bf Team Members:} Nick Allen, Finn Staeblein\\
     \vspace{0.1cm}
-    {\bf Emails:} finnst@stanford.edu, nallen21@stanford.edu
+    {\bf Emails:} nallen21@stanford.edu, finnst@stanford.edu
     \vspace{0.2cm}
   \end{center}
 }
@@ -59,73 +61,114 @@
 
 \maketitle
 
-% Submission checklist and instructions (Please remove before submitting)
-\begin{center}
-\fcolorbox{purple}{purple!5}{
-  \begin{minipage}{0.95\textwidth}
-    \textcolor{purple}{\textbf{Submission Checklist \& Instructions (Please remove this block before submitting):}}
-    \begin{enumerate}[leftmargin=*, noitemsep]
-      \item \textbf{IPO Milestone Assignment (Gradescope):} Submit \texttt{ipo\_trainer/ipo.py} (implementation) and \texttt{eval.json} (evaluation output).
-      \item \textbf{RLOO Milestone Assignment (Gradescope):} Submit \texttt{rloo\_trainer/rloo\_update\_worker.py} (implementation) and \texttt{eval.json} (evaluation output).
-      \item \textbf{IPO/RLOO Milestone Submission PDF (Gradescope):} Submit this compiled PDF report containing all required plots and rollout samples detailed below.
-      \item \textbf{Plots Requirement:} All reported training and evaluation metrics must be displayed as plots (e.g., generated with \texttt{matplotlib}) rather than only scalar values.
-    \end{enumerate}
-  \end{minipage}
-}
-\end{center}
-
 \vspace{0.3cm}
 
 \section{IPO Milestone Component}
 \label{sec:ipo_milestone}
 
 \subsection{Training and Evaluation Metrics}
-Describe your IPO implementation, training setup (e.g., hyperparameter choices such as learning rate, $\beta$, epochs, optimizer), and any specific observations during the alignment process.
+We initialize the policy from our SFT checkpoint and run IPO for one epoch over
+roughly 48{,}000 preference pairs, using a learning rate of $5\times10^{-6}$,
+$\beta = 0.1$, and the AdamW optimizer. The reference model is the frozen SFT
+checkpoint, evaluated under \texttt{no\_grad}.
 
-% Side-by-side plots for IPO Loss and Reward Margin
-\begin{figure}[htbp]
+For each preference pair we compute the difference of log-ratios
+\[
+h = \big(\log \pi_\theta(y_w \mid x) - \log \pi_{\text{ref}}(y_w \mid x)\big)
+  - \big(\log \pi_\theta(y_l \mid x) - \log \pi_{\text{ref}}(y_l \mid x)\big),
+\]
+where $y_w$ is the chosen response and $y_l$ the rejected one, and each
+log-probability is the sum of token log-probabilities over response tokens only
+(prompt and padding positions are masked out). The IPO loss is a squared error
+that pushes $h$ toward the target margin $1/(2\beta) = 5$:
+\[
+\mathcal{L}_{\text{IPO}} = \Big(h - \tfrac{1}{2\beta}\Big)^2 .
+\]
+We log the reward margin $(\beta h)$ averaged over the batch, and the reward
+accuracy, the fraction of pairs for which the chosen log-ratio exceeds the
+rejected log-ratio. Training was stable. The reward margin stayed positive
+throughout and reward accuracy reached about $0.68$ on the train set and $0.64$
+on the held-out set, so the policy consistently assigns higher relative
+likelihood to preferred responses than the reference does.
+
+\begin{figure}[H]
   \centering
   \begin{minipage}{0.48\textwidth}
     \centering
-    % Replace with your actual matplotlib plot (e.g., ipo_loss.png)
-    \fbox{\rule{0pt}{4cm}\rule{6cm}{0pt}}
-    \caption{IPO Loss on Train and Test sets over training iterations.}
-    \label{fig:ipo_loss}
-  \end{minipage}
-  \hfill
+    \includegraphics[width=\linewidth]{wandDB-imgs/ipo-train-loss.png}
+  \end{minipage}\hfill
   \begin{minipage}{0.48\textwidth}
     \centering
-    % Replace with your actual matplotlib plot (e.g., ipo_margin.png)
-    \fbox{\rule{0pt}{4cm}\rule{6cm}{0pt}}
-    \caption{IPO Reward Margin on Train and Test sets over training iterations.}
-    \label{fig:ipo_margin}
+    \includegraphics[width=\linewidth]{wandDB-imgs/ipo-test-loss.png}
   \end{minipage}
+  \caption{IPO loss on the train (left) and test (right) sets over training iterations.}
+  \label{fig:ipo_loss}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{wandDB-imgs/ipo-reward-margin.png}
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{wandDB-imgs/ipo-train-reward-accuracy.png}
+  \end{minipage}
+  \caption{IPO reward margin (left) and reward accuracy (right) over training iterations.}
+  \label{fig:ipo_margin}
 \end{figure}
 
 \subsubsection{Functional Correctness (Pass@$k$)}
-Report the pass@$k$ metrics (e.g., as a bar plot generated with matplotlib comparing SFT and IPO on the Test Set).
+We evaluate the SFT and IPO checkpoints on the same 50 held-out problems,
+sampling 16 completions per problem and scoring each with the rule-based
+verifier. We report pass@$k$ using the unbiased estimator of Chen et al., which
+gives the probability that at least one of $k$ sampled completions is correct.
+IPO improves pass@1 from $33.2\%$ to $35.9\%$ and matches SFT at pass@16 (both
+$74.0\%$). In other words, preference optimization sharpens the model's single
+best attempt without raising the ceiling of what it can solve given many tries.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  % Replace with your actual matplotlib plot (e.g., ipo_pass_k.png)
-  \fbox{\rule{0pt}{4cm}\rule{8cm}{0pt}}
-  \caption{Pass@$k$ comparison between SFT Baseline and IPO Aligned Model on the Test Set.}
+  \includegraphics[width=0.7\textwidth]{../passk_comparison.png}
+  \caption{Pass@$k$ on the held-out set, SFT versus IPO (RLOO also shown for reference). IPO edges SFT at pass@1 and ties it at pass@16.}
   \label{fig:ipo_pass_k}
 \end{figure}
 
 \subsection{Sample Rollout}
-Include one test-set rollout for a sample test problem using the IPO-aligned model.
+A representative IPO rollout on a held-out problem (target 44, numbers 26, 4, 2).
+The model tries a few direct combinations, then works backward and lands on
+$(26 - 4) \times 2 = 44$. The answer is correct and uses each number once.
 
 \begin{lstlisting}[caption={Sample IPO Test-Set Rollout (Countdown)}, label={lst:ipo_rollout}]
 [PROMPT]
-Target: 24
-Allowed numbers: [3, 4, 6, 8]
+Target: 44
+Allowed numbers: [26, 4, 2]
 
 [IPO MODEL ROLLOUT]
 <think>
-[model thinking here]
+Let me analyze this step by step:
+1. First, let's try to get close to 44 with basic operations:
+- 26 + 2 = 28 (too low)
+- 26 + 26 = 52 (too high)
+- 4 * 2 = 8 (too low)
+2. Let's work backwards from 44:
+- 44 is 4 * 11
+- So if we could get 11 from the remaining numbers (26, 4), that would work
+3. Let's try to get 11:
+- 26 - 4 = 22
+- 22 - 2 = 20
+- Not helpful
+4. Another approach:
+- 26 - 4 = 22
+- 22 * 2 = 44
+- And we still have 2 to use
+- So if we do (26 - 4) * 2 = 44
+This works! Let's verify:
+26 - 4 = 22
+22 * 2 = 44
 </think>
-<answer>[model answer here]</answer>
+<answer> (26 - 4) * 2 </answer>
 \end{lstlisting}
 
 \newpage
@@ -134,70 +177,102 @@ Allowed numbers: [3, 4, 6, 8]
 \label{sec:rloo_milestone}
 
 \subsection{Training and Evaluation Metrics}
-Describe your RLOO implementation (such as the REINFORCE Leave-One-Out baseline configuration), RL training setup (e.g., learning rate, KL coefficient, number of rollouts per prompt), and stability observations.
+We initialize RLOO from the SFT checkpoint and train for 100 update steps with a
+constant learning rate of $1\times10^{-5}$, batch size 128, KL coefficient
+$0.001$ to the frozen SFT reference, and no entropy bonus. For each prompt we
+sample a group of $G$ responses and score them with the rule-based verifier. The
+Leave-One-Out baseline for a response is the mean reward of the other $G-1$
+responses in its group, so the advantage is that response's reward minus the
+group mean. Each update applies a sequence-level importance weight to correct for
+log-probability mismatch between the vLLM sampler and the trainer.
 
-% 2x2 grid of plots for RLOO training metrics
-\begin{figure}[htbp]
+We targeted a group size of 8 but hit memory limits on the H100 and reduced it to
+4, which makes the leave-one-out baseline noisier. Mean reward stayed around
+$0.25$ to $0.30$ (Figure~\ref{fig:rloo_reward}) and rollout accuracy around
+$0.18$ to $0.26$ across the run, stable but without a clear upward trend. The importance
+weight is near 1 for most sequences but spikes sharply late in training
+(Figure~\ref{fig:rloo_importance}); with gradient clipping disabled that update
+was large, but reward recovered right after.
+
+\begin{figure}[H]
   \centering
   \begin{minipage}{0.48\textwidth}
     \centering
-    % Replace with your actual plot (e.g., rloo_loss.png)
-    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
-    \caption{RLOO Loss on Train set over training iterations.}
+    \includegraphics[width=\linewidth]{wandDB-imgs/rloo-train-loss.png}
+    \caption{RLOO loss on the train set. The single spike late in training dominates the vertical scale; loss is otherwise small and stable.}
     \label{fig:rloo_loss}
   \end{minipage}
   \hfill
   \begin{minipage}{0.48\textwidth}
     \centering
-    % Replace with your actual plot (e.g., importance_weight.png)
-    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
-    \caption{Importance Weight Mean on Train set.}
+    \includegraphics[width=\linewidth]{wandDB-imgs/rloo-train-importance-weight.png}
+    \caption{Importance weight mean on the train set.}
     \label{fig:rloo_importance}
   \end{minipage}
-  
+
   \vspace{0.4cm}
-  
+
   \begin{minipage}{0.48\textwidth}
     \centering
-    % Replace with your actual plot (e.g., kl_loss.png)
-    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
-    \caption{KL Loss on Train set over training iterations.}
+    \includegraphics[width=\linewidth]{wandDB-imgs/rloo-train-KL-loss.png}
+    \caption{KL loss on the train set over training iterations.}
     \label{fig:rloo_kl}
   \end{minipage}
   \hfill
+  
   \begin{minipage}{0.48\textwidth}
     \centering
-    % Replace with your actual plot (e.g., rollout_accuracy.png)
-    \fbox{\rule{0pt}{3.5cm}\rule{6cm}{0pt}}
-    \caption{Rollout Accuracy (over 16 samples) on Train set.}
+    \includegraphics[width=\linewidth]{wandDB-imgs/rloo-train-reward-accuracy.png}
+    \caption{Rollout accuracy (over 16 samples) on the train set.}
     \label{fig:rloo_accuracy}
   \end{minipage}
 \end{figure}
 
-\subsubsection{Functional Correctness (Pass@$k$)}
-Report the pass@$k$ metrics (e.g., as a bar plot generated with matplotlib comparing SFT and RLOO on the Test Set).
-
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  % Replace with your actual matplotlib plot (e.g., rloo_pass_k.png)
-  \fbox{\rule{0pt}{4cm}\rule{8cm}{0pt}}
-  \caption{Pass@$k$ comparison between SFT Baseline and RLOO Aligned Model on the Test Set.}
+  \includegraphics[width=0.48\textwidth]{wandDB-imgs/rloo-train-reward-mean.png}
+  \caption{Mean reward on the train set, which stays in the $0.25$ to $0.30$ range without a clear upward trend over the 100 steps.}
+  \label{fig:rloo_reward}
+\end{figure}
+
+\subsubsection{Functional Correctness (Pass@$k$)}
+Using the same 50 held-out problems and 16 completions per problem, RLOO reaches
+pass@1 $24.6\%$ and pass@16 $70.0\%$, below both SFT ($33.2\%$, $74.0\%$) and IPO
+($35.9\%$, $74.0\%$). This is consistent with the training curves: over only 100
+steps with a group size of 4 and a reward signal that never trended upward, the
+policy did not improve over its SFT starting point and slightly regressed. The
+importance-weight instability late in training likely contributed by letting a few
+mis-weighted updates dominate. Figure~\ref{fig:rloo_pass_k} shows all three
+methods on one axis.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{../passk_comparison.png}
+  \caption{Pass@$k$ on the held-out set, SFT versus RLOO (IPO also shown for reference). RLOO sits below both baselines at every $k$.}
   \label{fig:rloo_pass_k}
 \end{figure}
 
 \subsection{Sample Rollout}
-Include one test-set rollout for a sample test problem using the RLOO-aligned model.
+A representative RLOO rollout (target 89, numbers 94, 89, 94). The model notices
+the target is one of the given numbers, cancels the two 94s to make 0, and adds
+89. Correct, with each number used once.
 
 \begin{lstlisting}[caption={Sample RLOO Test-Set Rollout (Countdown)}, label={lst:rloo_rollout}]
 [PROMPT]
-Target: 24
-Allowed numbers: [3, 4, 6, 8]
+Target: 89
+Allowed numbers: [94, 89, 94]
 
 [RLOO MODEL ROLLOUT]
 <think>
-[model thinking here]
+Let me analyze this step by step:
+1. Since 89 is one of our numbers and it's also the target, let's see if we can get there directly.
+2. We have two 94s and 89 left. Let's see if we can use these to cancel out or equal 89.
+3. 94 - 94 = 0, which is close to 89. This could be useful.
+4. If we have 0, we can add 89 to get 89.
+5. Let's verify: (94 - 94) + 89 = 0 + 89 = 89
+6. This works perfectly! We can write this as: 94 - 94 + 89
 </think>
-<answer>[model answer here]</answer>
+<answer>94 - 94 + 89</answer>
 \end{lstlisting}
 
 \newpage
@@ -205,6 +280,21 @@ Allowed numbers: [3, 4, 6, 8]
 \section{Extension Updates (Optional)}
 \label{sec:extension_updates}
 Describe any progress, modifications, or updates regarding your project extension here. (You may remove or leave this section blank if you do not have updates to report at this stage).
+
+\newpage
+
+\section{Team Contributions}
+\label{sec:contributions}
+The proposal listed three members, with the default pipeline split evenly across
+all three. Nicolo has since dropped the course, so the team for this milestone is
+Nick Allen and Finn Staeblein, and we divided the work evenly between us. Nick
+owned the IPO component (trainer, training runs, and IPO evaluation) and Finn
+owned the RLOO component (update worker, training runs, and RLOO evaluation).
+Both members ran the shared SFT and pass@$k$ pipeline and wrote the report
+together. For the remaining work on the conjecturer-prover extension, we plan to
+keep an even split across the conjecturer-side problem generation and
+difficulty-band reward, the prover-side RLOO integration, and the
+out-of-distribution evaluation.
 
 \newpage
 
