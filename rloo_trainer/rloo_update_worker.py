@@ -239,7 +239,7 @@ class RLOOUpdateWorker:
         # Sequence-level importance weight (vLLM sampler vs HF trainer mismatch).
         if sample_log_probs is not None:
             sample_log_probs = torch.as_tensor(sample_log_probs, dtype=torch.float32, device=device)
-            importance_weight = torch.exp(seq_logp.detach() - sample_log_probs).clamp(max=2.0)
+            importance_weight = torch.exp(seq_logp.detach() - sample_log_probs).clamp(min=0.5, max=2.0)
         else:
             importance_weight = torch.ones_like(seq_logp)
 
@@ -262,8 +262,8 @@ class RLOOUpdateWorker:
         (loss / self.gradient_accumulation_steps).backward()
 
         if is_update_step:
-            if self.gradient_clipping and self.gradient_clipping > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clipping)
+            clip_value = max(self.gradient_clipping, 1.0)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
             self.optimizer.step()
             self.scheduler.step()
             self.optimizer.zero_grad()
