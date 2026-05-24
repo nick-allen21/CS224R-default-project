@@ -239,7 +239,7 @@ class RLOOUpdateWorker:
         # Sequence-level importance weight (vLLM sampler vs HF trainer mismatch).
         if sample_log_probs is not None:
             sample_log_probs = torch.as_tensor(sample_log_probs, dtype=torch.float32, device=device)
-            importance_weight = torch.exp(seq_logp.detach() - sample_log_probs)
+            importance_weight = torch.exp(seq_logp.detach() - sample_log_probs).clamp(max=2.0)
         else:
             importance_weight = torch.ones_like(seq_logp)
 
