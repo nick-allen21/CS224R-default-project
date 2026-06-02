@@ -46,3 +46,30 @@ cs224r-project-milestone/*.blg
 cs224r-project-milestone/*.synctex.gz
 cs224r-project-milestone/*.fdb_latexmk
 cs224r-project-milestone/*.fls
+
+# --- added by cleanup_for_push.sh ---
+# OS / editors
+**/.DS_Store
+*.swp
+*.swo
+
+# Archives / large artifacts
+*.zip
+
+# Eval results & datasets (regeneratable)
+eval_results_joint/
+downloaded_eval_results
+rloo_step10.json
+rloo_trainer/rloo_eval.json
+data/
+
+# Build / binary artifacts
+*.docx
+poster_assets/*.pdf
+
+# Internal notes (not for public repo)
+notes/
+
+# Local checkpoints / wandb dirs
+checkpoints/
+wandb/

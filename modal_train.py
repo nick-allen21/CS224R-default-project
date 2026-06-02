@@ -192,11 +192,37 @@ def run_eval(eval_args: list[str]) -> str:
     return _run_eval(eval_args)
 
 
+@app.function(
+    image=base_image,
+    gpu=GPU_CONFIG,
+    cpu=CPU_COUNT,
+    timeout=TIMEOUT_SECONDS,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    volumes={str(REMOTE_VOLUME_ROOT): TRAINING_VOLUME},
+    secrets=_build_secret_list(),
+)
+def run_conjtest(test_args: list[str]) -> str:
+    return _run_training("joint_trainer/test_conjecturer.py", test_args)
+
+
+@app.function(
+    image=base_image,
+    gpu=GPU_CONFIG,
+    cpu=CPU_COUNT,
+    timeout=TIMEOUT_SECONDS,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    volumes={str(REMOTE_VOLUME_ROOT): TRAINING_VOLUME},
+    secrets=_build_secret_list(),
+)
+def run_joint(joint_args: list[str]) -> str:
+    return _run_training("joint_trainer/joint.py", joint_args)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Launch one of the existing training entrypoints on Modal.",
     )
-    parser.add_argument("trainer", choices=("sft", "ipo", "rloo", "eval"))
+    parser.add_argument("trainer", choices=("sft", "ipo", "rloo", "eval", "conjtest", "joint"))
     parser.add_argument(
         "trainer_args",
         nargs=argparse.REMAINDER,
@@ -220,6 +246,10 @@ def main(*raw_args: str) -> None:
         result = run_ipo.remote(trainer_args)
     elif args.trainer == "eval":
         result = run_eval.remote(trainer_args)
+    elif args.trainer == "conjtest":
+        result = run_conjtest.remote(trainer_args)
+    elif args.trainer == "joint":
+        result = run_joint.remote(trainer_args)
     else:
         result = run_rloo.remote(trainer_args)
 

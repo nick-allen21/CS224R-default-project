@@ -14,19 +14,20 @@ from transformers import AutoTokenizer
 class SamplingWorker:
     """GPU worker responsible for policy rollouts (text sampling)."""
     def __init__(
-        self, 
-        model_path, 
-        max_model_len=2048, 
-        gpu_memory_utilization=0.9, 
-        max_num_batched_tokens=8192, 
-        enable_chunked_prefill=True, 
+        self,
+        model_path,
+        max_model_len=2048,
+        gpu_memory_utilization=0.9,
+        max_num_batched_tokens=8192,
+        enable_chunked_prefill=True,
         max_num_seqs=64,
         temperature=0.6,
         top_p=0.95,
         top_k=20,
         min_p=0.0,
         max_tokens=1024,
-        group_size=16
+        group_size=16,
+        stop_tokens=None,
     ):
         self.model_path = model_path
         self.max_model_len = max_model_len
@@ -40,6 +41,7 @@ class SamplingWorker:
         self.min_p = min_p
         self.max_tokens = max_tokens
         self.group_size = group_size
+        self.stop_tokens = stop_tokens if stop_tokens is not None else ["</answer>"]
 
     def load_checkpoint(self):
         """(Re)load tokenizer + vLLM engine for current model path."""
@@ -81,7 +83,7 @@ class SamplingWorker:
             min_p=self.min_p,
             max_tokens=self.max_tokens,
             n=self.group_size,
-            stop=["</answer>"],
+            stop=self.stop_tokens,
             include_stop_str_in_output=True,
             logprobs=1
         )
