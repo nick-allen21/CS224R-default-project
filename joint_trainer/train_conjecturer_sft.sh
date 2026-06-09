@@ -89,7 +89,7 @@ for i in "${!lrs[@]}"; do
     wandb_name="${WANDB_NAME_PREFIX:-conj_sft_lr${curr_lr}_ep${curr_epochs}}"
 
     command=(
-        modal run "$PROJECT_ROOT/modal_train.py"
+        modal run --detach "$PROJECT_ROOT/modal_train.py"
         sft
         --model_name "$model_name"
         --dataset_name "$dataset_name"
